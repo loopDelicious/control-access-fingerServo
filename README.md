@@ -37,7 +37,7 @@ The following attributes are available for this model:
   "sensor": "fingerprint-sensor",
   "board": "board-1",
   "servo": "servo-1",
-  "leave_open_timeout", 30
+  "leave_open_timeout": 30
 }
 ```
 
