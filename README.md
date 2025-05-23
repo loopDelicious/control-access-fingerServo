@@ -1,18 +1,21 @@
-# Module control-access-fingerservo 
+# Module control-access-fingerservo
 
-Provide a description of the purpose of the module and any relevant information.
+Get physical access by moving a servo to an open position upon a fingerprint match.
 
 ## Model joyce:control-access-fingerservo:fingerServo
 
-Provide a description of the model and any relevant information.
+Scanning a fingerprint that is a match using the R503 fingerprint sensor results in moving a servo to an open position.
 
 ### Configuration
+
 The following attribute template can be used to configure this model:
 
 ```json
 {
-"attribute_1": <float>,
-"attribute_2": <string>
+  "board": <string>,
+  "sensor": <string>,
+  "servo": <string>,
+  "leave_open_timeout": <float>
 }
 ```
 
@@ -20,31 +23,34 @@ The following attribute template can be used to configure this model:
 
 The following attributes are available for this model:
 
-| Name          | Type   | Inclusion | Description                |
-|---------------|--------|-----------|----------------------------|
-| `attribute_1` | float  | Required  | Description of attribute 1 |
-| `attribute_2` | string | Optional  | Description of attribute 2 |
+| Name                 | Type   | Inclusion | Description                                                                                               |
+| -------------------- | ------ | --------- | --------------------------------------------------------------------------------------------------------- |
+| `board`              | string | Required  | Name of the Raspberry Pi board in the Viam app                                                            |
+| `sensor`             | string | Required  | Name of the fingerprint sensor component in the Viam app                                                  |
+| `servo`              | string | Required  | Name of the servo component in the Viam app                                                               |
+| `leave_open_timeout` | float  | Optional  | Time to leave the servo in an open position after a fingerprint match (in seconds), default is 60 seconds |
 
 #### Example Configuration
 
 ```json
 {
-  "attribute_1": 1.0,
-  "attribute_2": "foo"
+  "sensor": "fingerprint-sensor",
+  "board": "board-1",
+  "servo": "servo-1",
+  "leave_open_timeout", 30
 }
 ```
 
 ### DoCommand
 
-If your model implements DoCommand, provide an example payload of each command that is supported and the arguments that can be used. If your model does not implement DoCommand, remove this section.
+Example payload of each command that is supported and the arguments that can be used, to `start` and `stop` the control loop.
 
 #### Example DoCommand
 
 ```json
-{
-  "command_name": {
-    "arg1": "foo",
-    "arg2": 1
-  }
-}
+{ "action": "start" }
+```
+
+```json
+{ "action": "stop" }
 ```

@@ -2,13 +2,13 @@
   "$schema": "https://dl.viam.dev/module.schema.json",
   "module_id": "joyce:control-access-fingerservo",
   "visibility": "public",
-  "url": "",
+  "url": "https://github.com/loopDelicious/control-access-fingerServo",
   "description": "Modular generic service: fingerServo",
   "models": [
     {
       "api": "rdk:service:generic",
       "model": "joyce:control-access-fingerservo:fingerServo",
-      "short_description": "Provide a short (100 characters or less) description of this model here",
+      "short_description": "Get physical access by moving a servo to an open position upon a fingerprint match.",
       "markdown_link": "README.md#model-joycecontrol-access-fingerservofingerservo"
     }
   ],
@@ -21,7 +21,6 @@
     "setup": "./setup.sh",
     "path": "dist/archive.tar.gz",
     "arch": [
-      "linux/amd64",
       "linux/arm64"
     ]
   }

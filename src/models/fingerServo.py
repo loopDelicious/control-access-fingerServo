@@ -1,4 +1,4 @@
-from typing import ClassVar, Final, Mapping, Optional, Sequence
+from typing import ClassVar, Mapping, Optional, Sequence, cast
 
 from typing_extensions import Self
 from viam.proto.app.robot import ComponentConfig
@@ -7,8 +7,17 @@ from viam.resource.base import ResourceBase
 from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.services.generic import *
-from viam.utils import ValueTypes
+from viam.utils import ValueTypes, struct_to_dict
 
+import asyncio
+from threading import Event
+from viam.logging import getLogger
+
+from viam.components.board import Board
+from viam.components.sensor import Sensor
+from viam.components.servo import Servo
+
+LOGGER = getLogger("fingerservo")
 
 class Fingerservo(Generic, EasyResource):
     # To enable debug-level logging, either run viam-server with the --debug option,
@@ -16,6 +25,10 @@ class Fingerservo(Generic, EasyResource):
     MODEL: ClassVar[Model] = Model(
         ModelFamily("joyce", "control-access-fingerservo"), "fingerServo"
     )
+
+    running = None
+    task = None
+    event = Event()
 
     @classmethod
     def new(
@@ -44,7 +57,25 @@ class Fingerservo(Generic, EasyResource):
         Returns:
             Sequence[str]: A list of implicit dependencies
         """
-        return []
+
+        attrs = struct_to_dict(config.attributes)
+        required_dependencies = ["board", "servo", "sensor"]
+        implicit_dependencies = []
+
+        if "leave_open_timeout" in attrs:
+            try:
+                timeout = float(attrs["leave_open_timeout"])
+                if timeout < 0:
+                    raise ValueError
+            except ValueError:
+                raise ValueError("leave_open_timeout must be a positive number")
+
+        for component in required_dependencies:
+            if component not in attrs or not isinstance(attrs[component], str):
+                raise ValueError(f"{component} is required and must be a string")
+            else:
+                implicit_dependencies.append(attrs[component])
+        return implicit_dependencies
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -55,6 +86,21 @@ class Fingerservo(Generic, EasyResource):
             config (ComponentConfig): The new configuration
             dependencies (Mapping[ResourceName, ResourceBase]): Any dependencies (both implicit and explicit)
         """
+        attrs = struct_to_dict(config.attributes)
+
+        board_resource = dependencies.get(Board.get_resource_name(str(attrs.get("board"))))
+        self.board = cast(Board, board_resource)
+        servo_resource = dependencies.get(Servo.get_resource_name(str(attrs.get("servo"))))
+        self.servo = cast(Servo, servo_resource)
+        sensor_resource = dependencies.get(Sensor.get_resource_name(str(attrs.get("sensor"))))
+        self.sensor= cast(Sensor, sensor_resource)
+        self.leave_open_timeout = float(attrs.get("leave_open_timeout", 60))
+
+        if self.running is None:
+            self.start()
+        else:
+            LOGGER.info("Already running control logic.")
+
         return super().reconfigure(config, dependencies)
 
     async def do_command(
@@ -64,6 +110,63 @@ class Fingerservo(Generic, EasyResource):
         timeout: Optional[float] = None,
         **kwargs
     ) -> Mapping[str, ValueTypes]:
-        self.logger.error("`do_command` is not implemented")
-        raise NotImplementedError()
 
+        result = {key: False for key in command.keys()}
+        for name, args in command.items():
+            if name == "action" and args == "start":
+                self.start()
+                result[name] = True
+            if name == "action" and args == "stop":
+                self.stop()
+                result[name] = True
+        return result
+
+    def start(self):
+        loop = asyncio.get_event_loop()
+        self.task = loop.create_task(self.control_loop())
+        self.event.clear()
+
+    def stop(self):
+        self.event.set()
+        if self.task is not None:
+            self.task.cancel()
+
+    async def control_loop(self):
+        while not self.event.is_set():
+            await self.on_loop()
+            await asyncio.sleep(0)
+
+    async def on_loop(self):
+        try:
+            readings = await self.sensor.get_readings()
+
+            finger_detected = readings.get("finger_detected", False)
+            matched = readings.get("matched", False)
+            now = asyncio.get_event_loop().time()
+
+            if finger_detected and matched:
+                self.logger.info("Fingerprint match detected.")
+                self.last_match_time = now
+                if not hasattr(self, "servo_open") or not self.servo_open:
+                    self.logger.info("Opening servo (180°).")
+                    await self.servo.move(180)
+                    self.servo_open = True
+            else:
+                last = getattr(self, "last_match_time", now)
+                timeout = getattr(self, "leave_open_timeout", 60)
+                if now - last > timeout:
+                    if not hasattr(self, "servo_open") or self.servo_open:
+                        self.logger.info("No match recently. Closing servo (0°).")
+                        await self.servo.move(0)
+                        self.servo_open = False
+
+        except Exception as err:
+            self.logger.error(f"Error in fingerprint control logic: {err}")
+
+        await asyncio.sleep(0.2)  # fast loop, debounce handles overreaction
+
+    def __del__(self):
+        self.stop()
+
+    async def close(self):
+        self.stop()
