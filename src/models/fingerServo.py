@@ -53,7 +53,7 @@ class Fingerservo(Generic, EasyResource):
 
         attrs = struct_to_dict(config.attributes)
         required_dependencies = ["board", "servo", "sensor"]
-        optional_dependencies = ["servo_open", "servo_close"]
+        optional_dependencies = ["servo_open_angle", "servo_closed_angle", "leave_open_timeout"]
 
         if "leave_open_timeout" in attrs:
             try:
