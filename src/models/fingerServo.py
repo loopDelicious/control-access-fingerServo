@@ -1,4 +1,4 @@
-from typing import ClassVar, Mapping, Optional, Sequence, Tuple, cast
+from typing import ClassVar, Mapping, Optional, Sequence, cast
 
 from typing_extensions import Self
 from viam.proto.app.robot import ComponentConfig
@@ -47,14 +47,17 @@ class Fingerservo(Generic, EasyResource):
         return super().new(config, dependencies)
 
     @classmethod
-    def validate_config(
-        cls, config: ComponentConfig
-    ) -> Tuple[Sequence[str], Sequence[str]]:
-
+    def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
         attrs = struct_to_dict(config.attributes)
-        required_dependencies = ["board", "servo", "sensor"]
-        optional_dependencies = ["servo_open_angle", "servo_closed_angle", "leave_open_timeout"]
+        dependencies = []
 
+        # Required
+        for name in ["board", "servo", "sensor"]:
+            if name not in attrs or not isinstance(attrs[name], str):
+                raise ValueError(f"{name} is required and must be a string")
+            dependencies.append(attrs[name])
+
+        # Validate optional values
         if "leave_open_timeout" in attrs:
             try:
                 timeout = float(attrs["leave_open_timeout"])
@@ -79,23 +82,18 @@ class Fingerservo(Generic, EasyResource):
             except ValueError:
                 raise ValueError("servo_closed_angle must be an integer between 0 and 180")
 
-        for component in required_dependencies:
-            if component not in attrs or not isinstance(attrs[component], str):
-                raise ValueError(f"{component} is required and must be a string")
-            else:
-                optional_dependencies.append(attrs[component])
+        # Optional dependencies
+        for name in ["servo_open_angle", "servo_closed_angle", "leave_open_timeout"]:
+            val = attrs.get(name)
+            if val and isinstance(val, str):
+                dependencies.append(val)
 
-        return required_dependencies, optional_dependencies
+        return dependencies
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
     ):
-        """This method allows you to dynamically update your service when it receives a new `config` object.
-
-        Args:
-            config (ComponentConfig): The new configuration
-            dependencies (Mapping[ResourceName, ResourceBase]): Any dependencies (both implicit and explicit)
-        """
+        
         attrs = struct_to_dict(config.attributes)
 
         board_resource = dependencies.get(Board.get_resource_name(str(attrs.get("board"))))
