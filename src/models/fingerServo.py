@@ -1,4 +1,4 @@
-from typing import ClassVar, Mapping, Optional, Sequence, cast
+from typing import ClassVar, Mapping, Optional, Sequence, Tuple, cast
 
 from typing_extensions import Self
 from viam.proto.app.robot import ComponentConfig
@@ -47,20 +47,13 @@ class Fingerservo(Generic, EasyResource):
         return super().new(config, dependencies)
 
     @classmethod
-    def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
-        """This method allows you to validate the configuration object received from the machine,
-        as well as to return any implicit dependencies based on that `config`.
-
-        Args:
-            config (ComponentConfig): The configuration for this resource
-
-        Returns:
-            Sequence[str]: A list of implicit dependencies
-        """
+    def validate_config(
+        cls, config: ComponentConfig
+    ) -> Tuple[Sequence[str], Sequence[str]]:
 
         attrs = struct_to_dict(config.attributes)
         required_dependencies = ["board", "servo", "sensor"]
-        implicit_dependencies = []
+        optional_dependencies = ["servo_open", "servo_close"]
 
         if "leave_open_timeout" in attrs:
             try:
@@ -70,12 +63,29 @@ class Fingerservo(Generic, EasyResource):
             except ValueError:
                 raise ValueError("leave_open_timeout must be a positive number")
 
+        if "servo_open_angle" in attrs:
+            try:
+                angle = int(attrs["servo_open_angle"])
+                if not (0 <= angle <= 180):
+                    raise ValueError
+            except ValueError:
+                raise ValueError("servo_open_angle must be an integer between 0 and 180")
+
+        if "servo_closed_angle" in attrs:
+            try:
+                angle = int(attrs["servo_closed_angle"])
+                if not (0 <= angle <= 180):
+                    raise ValueError
+            except ValueError:
+                raise ValueError("servo_closed_angle must be an integer between 0 and 180")
+
         for component in required_dependencies:
             if component not in attrs or not isinstance(attrs[component], str):
                 raise ValueError(f"{component} is required and must be a string")
             else:
-                implicit_dependencies.append(attrs[component])
-        return implicit_dependencies
+                optional_dependencies.append(attrs[component])
+
+        return required_dependencies, optional_dependencies
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -95,6 +105,8 @@ class Fingerservo(Generic, EasyResource):
         sensor_resource = dependencies.get(Sensor.get_resource_name(str(attrs.get("sensor"))))
         self.sensor= cast(Sensor, sensor_resource)
         self.leave_open_timeout = float(attrs.get("leave_open_timeout", 60))
+        self.servo_open_angle = int(attrs.get("servo_open_angle", 180))
+        self.servo_closed_angle = int(attrs.get("servo_closed_angle", 90))
 
         if self.running is None:
             self.start()
@@ -148,16 +160,16 @@ class Fingerservo(Generic, EasyResource):
                 self.logger.info("Fingerprint match detected.")
                 self.last_match_time = now
                 if not hasattr(self, "servo_open") or not self.servo_open:
-                    self.logger.info("Opening servo (180°).")
-                    await self.servo.move(180)
+                    self.logger.info(f"Moving servo to {self.servo_open_angle}° to open access.")
+                    await self.servo.move(self.servo_open_angle)
                     self.servo_open = True
             else:
                 last = getattr(self, "last_match_time", now)
                 timeout = getattr(self, "leave_open_timeout", 60)
                 if now - last > timeout:
                     if not hasattr(self, "servo_open") or self.servo_open:
-                        self.logger.info("No match recently. Closing servo (0°).")
-                        await self.servo.move(0)
+                        self.logger.info(f"Moving servo to {self.servo_closed_angle}° to close access.")
+                        await self.servo.move(self.servo_closed_angle)
                         self.servo_open = False
 
         except Exception as err:
